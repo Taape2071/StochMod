@@ -1,0 +1,357 @@
+---
+title: "Project1_Group8"
+author: "Daniel Hostadt"
+date: "2023-10-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exercise 1
+## c)
+```{r}
+rm(list = ls())
+```
+
+Prepare the Markov chain: Length and transition probability matrix.
+```{r}
+N = 7300
+P = matrix(c(0.99, 0, 0.005, 0.01, 0.9, 0, 0, 0.1, 0.995), nrow = 3)
+print(P)
+```
+
+The Markov chain and its simulation is outsourced into a function to repeatedly create simulations.
+```{r}
+simulate_markov_chain = function(N, P) {
+  # Initialize storage and state
+  chain = vector("numeric", length = N)
+  chain[1] = 0
+  
+  # Simulate the chain
+  for (i in 2:N) {
+    chain[i] = sample.int(3, size = 1, replace = TRUE,
+                          prob = P[chain[i-1]+1, ]) - 1
+  }
+  return(chain)
+}
+```
+
+Run a single Markov chain simulation and plot it.
+```{r}
+set.seed(42)
+chain = simulate_markov_chain(N, P)
+plot((1:N)/365, chain, type = "o", lwd = 2, cex.axis = 1.5,
+     main = "Markov chain simulation", xlab = "Time (years)", ylab = "State",
+     cex.lab = 1.5, cex.main = 1.5, yaxt = "n")
+axis(2, at = c(0, 1, 2), labels = c("0", "1", "2"), cex = 1.5, cex.axis = 1.5)
+```
+
+Take the last half of the simulation and estimate the long-run mean number of days per year spent in each state.
+```{r}
+days_of_states = chain[3651:7300]
+print(table(days_of_states)/10)
+```
+
+Run the Markov chain simulation for 30 times and save the point estimates of the mean number of days in a matrix.
+```{r}
+days_of_states = matrix(rep(0, 90), nrow = 3)
+set.seed(42)
+for (i in 1:30) {
+  chain = simulate_markov_chain(N, P)
+  last_half = chain[3651:7300]
+  days_of_states[, i] = as.vector(table(last_half)/10)
+}
+print(days_of_states[, 1:5])
+```
+
+Construct 95% CIs for each row in the matrix (i.e., for each of the states 0, 1, and 2).
+```{r}
+confidence_intervals = matrix(rep(0, 6), nrow = 3)
+for (i in 1:3) {
+  state = days_of_states[i, ]
+  confidence_intervals[i, ] = t.test(state)$conf.int
+}
+print(confidence_intervals)
+
+```
+
+
+
+## e)
+Prepare all parameters for the Markov chain: Length and transition probabilities.
+```{r}
+N = 300
+alpha = 0.005
+beta = function(x) {return((x/2)/1000)}
+gamma = 0.1
+
+```
+
+Outsourcing of the Markov chain into a simulation to repeatedly create simulations. The argument 'suscept' in the function is already a preparation for subtask g) where the population partly consists of vaccinated individuals.
+```{r}
+simulate_markov_chain = function(N, suscept, alpha, beta, gamma) {
+  # The chain will be stored in a 3x300 matrix where the rows are the groups
+  # and the columns are the time steps
+  chain = matrix(rep(0, 900), nrow = 3)
+  chain[, 1] = c(suscept, 50, 0)
+  
+  # Run the simulation
+  for (i in 2:N) {
+    # These is the realization of the current group
+    start = chain[, i-1]
+    # Sampling of how many people will change group
+    zero_to_one = rbinom(1, start[1], beta(start[2]))
+    one_to_two = rbinom(1, start[2], gamma)
+    two_to_zero = rbinom(1, start[3], alpha)
+    # The new numbers in the groups are the current ones minus how many people
+    # leave to the next group plus how many people arrive from the previous
+    # group
+    chain[, i] = start - c(zero_to_one, one_to_two, two_to_zero) + 
+      c(two_to_zero, zero_to_one, one_to_two)
+  }
+  return(chain)
+}
+```
+
+Run the Markov chain simulation once and plot it.
+```{r}
+set.seed(1)
+chain = simulate_markov_chain(N, 950, alpha, beta, gamma)
+plot(1:N, chain[1, ], type = "l", lwd = 2, cex.axis = 1.5,
+     main = "Model of measles outbreak", cex.lab = 1.5, cex.main = 1.5,
+     xlab = "Time (days)", ylab = "Number of people")
+lines(1:N, chain[2, ], type = "l", lwd = 2, col = "red")
+lines(1:N, chain[3, ], type = "l", lwd = 2, col = "green")
+legend("right", legend = c("S", "I", "R"), col = c("black", "red", "green"),
+       lty = 1, cex = 1.5, lwd = 2)
+```
+
+
+
+## f)
+Run the simulation 300 times. Only the people in the group 'Infected' are of interest, so the number of people in this group are written to another matrix.
+```{r}
+infected = matrix(rep(0, 300*1000), nrow = 1000)
+set.seed(1)
+for (i in 1:1000) {
+  chain = simulate_markov_chain(N, 950, alpha, beta, gamma)
+  infected [i, ] = chain[2, ]
+}
+```
+
+Take out the maximum number of each simulation of the group 'Infected' and get the mean and the confidence interval.
+```{r}
+max_infected = apply(infected, 1, max)
+print(mean(max_infected))
+print(t.test(max_infected)$conf.int)
+```
+
+Take out the index position at which this maximum value is located and get the mean and the confidence interval.
+```{r}
+maximum_index = function(x) {return(which(x == max(x))[1])}
+time_max_infected = apply(infected, 1, maximum_index)
+print(mean(time_max_infected))
+print(t.test(time_max_infected)$conf.int)
+```
+
+
+
+## g)
+This is the same plot as before with zero vaccinated people.
+```{r}
+set.seed(1)
+chain = simulate_markov_chain(N, 950, alpha, beta, gamma)
+plot(1:N, chain[1, ], type = "l", lwd = 2, cex.axis = 1.5, ylim = c(0, 1000),
+     main = "Number of vaccinated people: 0", cex.lab = 1.5, cex.main = 1.5,
+     xlab = "Time (days)", ylab = "Number of people")
+lines(1:N, chain[2, ], type = "l", lwd = 2, col = "red")
+lines(1:N, chain[3, ], type = "l", lwd = 2, col = "green")
+legend("right", legend = c("S", "I", "R"), col = c("black", "red", "green"),
+       lty = 1, cex = 1.5, lwd = 2)
+```
+
+This is the plot for with 100 vaccinated people.
+```{r}
+set.seed(1)
+chain = simulate_markov_chain(N, 850, alpha, beta, gamma)
+# Add the 100 vaccinated people
+chain[3, ] = chain[3, ] + 100
+plot(1:N, chain[1, ], type = "l", lwd = 2, cex.axis = 1.5, ylim = c(0, 1000),
+     main = "Number of vaccinated peope: 100", cex.lab = 1.5, cex.main = 1.5,
+     xlab = "Time (days)", ylab = "Number of people")
+lines(1:N, chain[2, ], type = "l", lwd = 2, col = "red")
+lines(1:N, chain[3, ], type = "l", lwd = 2, col = "green")
+legend("right", legend = c("S", "I", "R"), col = c("black", "red", "green"),
+       lty = 1, cex = 1.5, lwd = 2)
+```
+
+This is the plot with 600 vaccinated people.
+```{r}
+set.seed(1)
+chain = simulate_markov_chain(N, 350, alpha, beta, gamma)
+# Add the 600 vaccinated people
+chain[3, ] = chain[3, ] + 600
+plot(1:N, chain[1, ], type = "l", lwd = 2, cex.axis = 1.5, ylim = c(0, 1000),
+     main = "Number of vaccinated peope: 600", cex.lab = 1.5, cex.main = 1.5,
+     xlab = "Time (days)", ylab = "Number of people")
+lines(1:N, chain[2, ], type = "l", lwd = 2, col = "red")
+lines(1:N, chain[3, ], type = "l", lwd = 2, col = "green")
+legend("right", legend = c("S", "I", "R"), col = c("black", "red", "green"),
+       lty = 1, cex = 1.5, lwd = 2)
+```
+
+This is the plot with 800 vaccinated people.
+```{r}
+set.seed(1)
+chain = simulate_markov_chain(N, 150, alpha, beta, gamma)
+# Add the 800 vaccinated people
+chain[3, ] = chain[3, ] + 800
+plot(1:N, chain[1, ], type = "l", lwd = 2, cex.axis = 1.5, ylim = c(0, 1000),
+     main = "Number of vaccinated people: 800", cex.lab = 1.5, cex.main = 1.5,
+     xlab = "Time (days)", ylab = "Number of people")
+lines(1:N, chain[2, ], type = "l", lwd = 2, col = "red")
+lines(1:N, chain[3, ], type = "l", lwd = 2, col = "green")
+legend("right", legend = c("S", "I", "R"), col = c("black", "red", "green"),
+       lty = 1, cex = 1.5, lwd = 2)
+```
+
+These are the expected values with 100 vaccinated people. When calculating the expected values, the group of 'Recovered' is not of interest and thus the vaccinated individuals can just be left out.
+```{r}
+infected = matrix(rep(0, 300*1000), nrow = 1000)
+set.seed(1)
+for (i in 1:1000) {
+  chain = simulate_markov_chain(N, 850, alpha, beta, gamma)
+  infected [i, ] = chain[2, ]
+}
+max_infected = apply(infected, 1, max)
+print(mean(max_infected))
+maximum_index = function(x) {return(which(x == max(x))[1])}
+time_max_infected = apply(infected, 1, maximum_index)
+print(mean(time_max_infected))
+```
+
+These are the expected values with 600 vaccinated people.
+```{r}
+infected = matrix(rep(0, 300*1000), nrow = 1000)
+set.seed(1)
+for (i in 1:1000) {
+  chain = simulate_markov_chain(N, 350, alpha, beta, gamma)
+  infected [i, ] = chain[2, ]
+}
+max_infected = apply(infected, 1, max)
+print(mean(max_infected))
+maximum_index = function(x) {return(which(x == max(x))[1])}
+time_max_infected = apply(infected, 1, maximum_index)
+print(mean(time_max_infected))
+```
+
+These are the expected values with 800 vaccinated people.
+```{r}
+infected = matrix(rep(0, 300*1000), nrow = 1000)
+set.seed(1)
+for (i in 1:1000) {
+  chain = simulate_markov_chain(N, 150, alpha, beta, gamma)
+  infected [i, ] = chain[2, ]
+}
+max_infected = apply(infected, 1, max)
+print(mean(max_infected))
+maximum_index = function(x) {return(which(x == max(x))[1])}
+time_max_infected = apply(infected, 1, maximum_index)
+print(mean(time_max_infected))
+```
+
+
+
+# Exercise 2
+## a)
+Simulate the Poisson process.
+```{r}
+rate = 1.5
+coun = 0
+finish = 59
+
+set.seed(42)
+for (i in 1:1000){
+    proc = rpois(1, lambda = rate * finish)
+    if (proc > 100) {
+        coun = coun + 1
+    }
+}
+
+print(paste0('The probability of having more than 100 claims in the first 59 days is: ', coun / 1000))
+```
+
+Plot the simulation.
+```{r}
+plot(NULL, NULL, 
+     xlim = c(0, finish), 
+     ylim = c(0, 110), 
+     xlab = "Time (Days)", 
+     ylab = "Claims", 
+     main = "Claims in the first 59 days")
+
+colors = rainbow(10)
+
+set.seed(42)
+for (n in 1:10) {
+    proc2 = rpois(1, lambda = rate * finish)
+    times = sort(runif(proc2, min = 0, max = finish))
+    
+    process = c(0, cumsum(rep(1, length(times))), proc2)
+    
+    lines(c(0, times, finish), process, col = colors[n])
+}
+```
+
+## b)
+Calculate the probability of exceeding 8 million kr. based on 1000 simulations of the Poisson process events.
+First, create a vector with all total amounts and see how many have exceeded. Then, estimate the probability from there.
+```{r}
+simulations = 1000
+gamma = 10
+
+exc = numeric(simulations)
+set.seed(42)
+for (sim in 1:simulations) {
+  claims = rpois(1, lambda = rate * finish)
+  amounts = rexp(claims, rate = gamma)
+  total_claims = sum(amounts)
+  exc[sim] = total_claims > 8
+}
+
+prob = mean(exc)
+print(cat("Probability that Total Claim Amount Exceeds 8 Million kr:", prob, "\n"))
+```
+
+Plot it.
+```{r}
+plot(NULL, NULL, 
+     xlim = c(0, finish), 
+     ylim = c(0, 12), 
+     xlab = "Time (Days)", 
+     ylab = "Total Claim Amount (mill. kr.)", 
+     main = "Total Claim Amount in the First 59 Days")
+colors = rainbow(10)
+
+# Simulate and plot 10 realizations of Z(t)
+set.seed(42)
+for (n in 1:10) {
+    # Simulate Poisson process
+    proc = rpois(1, lambda = rate * finish)
+    times = sort(runif(proc, min = 0, max = finish))
+    
+    # Simulate exponential claims and calculate Z(t)
+    claims = rexp(proc, rate = gamma)
+    total_claims = cumsum(claims)
+    
+    # Add zero at t=0 and finish at t=59
+    times = c(0, times, finish)
+    total_claims = c(0, total_claims, total_claims[length(total_claims)])
+    
+    # Plot the realization
+    lines(times, total_claims, col = colors[n])
+}
+```
+
